@@ -1,0 +1,26 @@
+{
+  "nodes": [
+    "main.manapotion.io:5556"
+  ],
+  "database": "spent_addresses",
+  "importFile": "spent_addresses.bin",
+  "cache": {
+    "size": 100000,
+    "batchEvictionSize": 10000
+  },
+  "logger": {
+    "level": "info",
+    "disableCaller": true,
+    "disableStacktrace": true,
+    "encoding": "console",
+    "outputPaths": [
+      "stdout"
+    ],
+    "disableEvents": false
+  },
+  "http": {
+    "bindAddress": "0.0.0.0:8081",
+    "maxAddressesInRequest": 1000,
+    "secretKey": "nQnYmM4eU4rKjnRD2hc9UuhxTGTAJK9jbGjB79YkESKn9Cbmzd5RJa9qeSsQbARE"
+  }
+}
