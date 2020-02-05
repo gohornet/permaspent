@@ -3,7 +3,8 @@ module github.com/gohornet/permaspent
 go 1.13
 
 require (
-	github.com/go-zeromq/zmq4 v0.8.0
+	github.com/eclipse/paho.mqtt.golang v1.2.1-0.20200121105743-0d940dd29fd2
+	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/iotaledger/hive.go v0.0.0-20200131164002-e50853dd9172
 	github.com/iotaledger/iota.go v1.0.0-beta.14
 	github.com/labstack/echo v3.3.10+incompatible

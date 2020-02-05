@@ -1,67 +1,103 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"math/rand"
+	"sync/atomic"
 	"time"
 
-	"github.com/go-zeromq/zmq4"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/iotaledger/hive.go/backoff"
 	"github.com/iotaledger/hive.go/daemon"
 )
 
 var initialRetryDelay = time.Second * 1
-var maxRetryDelay = time.Second * 16
+var maxRetryDelay = time.Second * 10
 
-func spawnCollector(zmqURL string) {
-	collectLog := log.Named(zmqURL)
-	if err := daemon.BackgroundWorker(fmt.Sprintf("collector-%s", zmqURL), func(shutdownSignal <-chan struct{}) {
-		collectLog.Infof("spawned collector for %s", zmqURL)
-		defer collectLog.Infof("collector for %s stopped", zmqURL)
+func spawnCollector(mqttURL string) {
+	name := fmt.Sprintf("collector-%s", mqttURL)
+	collectorLog := log.Named(name)
+	if err := daemon.BackgroundWorker(name, func(shutdownSignal <-chan struct{}) {
+		collectorLog.Infof("spawned collector")
+		defer collectorLog.Infof("collector stopped")
 
-		// 1, 2, 4, 8, 16 seconds delay
-		backOff := backoff.ExponentialBackOff(initialRetryDelay, 2).
+		connLost := make(chan error, 1)
+   		msgChan := make(chan mqtt.Message, 1)
+
+		connectCollector := func(c mqtt.Client) error {
+			if token := c.Connect(); token.Wait() && token.Error() != nil {
+				return fmt.Errorf("could not connect: %v", token.Error())
+			}
+			if token := c.Subscribe("spent_address", 0, func(client mqtt.Client, message mqtt.Message) {
+				msgChan <- message
+			}); token.Wait() && token.Error() != nil {
+				return fmt.Errorf("could not subscribe: %w", token.Error())
+			}
+			return nil
+		}
+
+		// mqtt client opts
+		opts := mqtt.NewClientOptions().AddBroker(fmt.Sprintf("tcp://%s", mqttURL))
+		opts.SetClientID(fmt.Sprintf("client-%d", rand.Int()%1000))
+		opts.SetCleanSession(true)
+		opts.SetConnectionLostHandler(func(c mqtt.Client, err error) { connLost <- err })
+
+		// connect
+		c := mqtt.NewClient(opts)
+
+		// 1, 2, 4, 8 seconds delay
+		collectorLog.Info("connecting...")
+		backOffPolicy := backoff.ExponentialBackOff(initialRetryDelay, 2).
 			With(backoff.MaxInterval(maxRetryDelay))
-
-		if err := backoff.Retry(backOff, func() error {
-			ctx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(2)*time.Second)
-			sub := zmq4.NewSub(ctx)
-			cancelFunc()
-
-			select {
-			case <-shutdownSignal:
-				return nil
-			default:
-			}
-
-			if err := sub.Dial(fmt.Sprintf("tcp://%s", zmqURL)); err != nil {
-				collectLog.Errorf("coul not dial: %s", err)
+		if err := backoff.Retry(backOffPolicy, func() error {
+			if err := connectCollector(c); err != nil {
+				collectorLog.Error(err)
 				return err
 			}
+			return nil
+		}); err != nil {
+			// note that this can never be hit, since we have no max retries
+			collectorLog.Errorf("stopped collector due to: %s", err)
+		}
+		collectorLog.Info("connected")
 
-			if err := sub.SetOption(zmq4.OptionSubscribe, "spent_address"); err != nil {
-				collectLog.Errorf("coul not dial: %s", err)
-				return err
-			}
-
+		var collected int64
+		go func() {
+			ticker := time.NewTicker(time.Second * 10)
+			defer ticker.Stop()
 			for {
-				msg, err := sub.Recv()
-				if err != nil {
-					collectLog.Errorf("could not receive message: %s", err)
-					sub.Close()
-					return err
-				}
-
 				select {
 				case <-shutdownSignal:
-					break
-				default:
+					return
+				case <-ticker.C:
+					collectorLog.Infof("collected %d addresses", atomic.LoadInt64(&collected))
 				}
-
-				spentAddrCache.Set(msg.String(), true)
 			}
-		}); err != nil {
-			log.Fatalf("stopped collector for %s due to: %s", zmqURL, err)
+		}()
+
+		for {
+			select {
+			case <-shutdownSignal:
+				c.Disconnect(0)
+				return
+			case err := <-connLost:
+				collectorLog.Warnf("lost connection: '%s', trying to reconnect...", err)
+				if err := backoff.Retry(backOffPolicy, func() error {
+					if err := connectCollector(c); err != nil {
+						collectorLog.Error(err)
+						return err
+					}
+					return nil
+				}); err != nil {
+					// note that this can never be hit, since we have no max retries
+					collectorLog.Errorf("stopped collector due to: %s", err)
+					return
+				}
+				collectorLog.Info("connected")
+			case msg := <-msgChan:
+				atomic.AddInt64(&collected, 1)
+				spentAddrCache.Set(string(msg.Payload()), true)
+			}
 		}
 	}, PriorityCollector); err != nil {
 		log.Fatal(err)

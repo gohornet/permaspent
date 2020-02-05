@@ -1,6 +1,6 @@
 {
   "nodes": [
-    "main.manapotion.io:5556"
+    "127.0.0.1:1883"
   ],
   "database": "spent_addresses",
   "importFile": "spent_addresses.bin",

@@ -1,10 +1,13 @@
 package main
 
-import "github.com/iotaledger/hive.go/daemon"
+import (
+	"github.com/iotaledger/hive.go/daemon"
+)
 
 const (
 	PriorityCleanup = iota
 	PriorityBadgerGC
+	PriorityWatchDog
 	PriorityCollector
 	PriorityHTTPServer
 )
