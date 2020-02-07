@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/badger/v2/options"
 	"github.com/iotaledger/hive.go/daemon"
 	"github.com/iotaledger/hive.go/database"
 	"github.com/iotaledger/hive.go/lru_cache"
@@ -18,6 +20,20 @@ func initCache() {
 		EvictionCallback:  onEvictSpentAddresses,
 		EvictionBatchSize: config.GetUint64("cache.batchEvictionSize"),
 	})
+}
+
+func getDatabaseOpts(dbDir string) badger.Options {
+	opts := badger.DefaultOptions(dbDir)
+	opts.CompactL0OnClose = false
+	opts.KeepL0InMemory = false
+	opts.VerifyValueChecksum = false
+	opts.ZSTDCompressionLevel = 1
+	opts.Compression = options.None
+	opts.MaxCacheSize = 50000000
+	opts.Truncate = false
+	opts.EventLogging = false
+	opts.Logger = nil
+	return opts
 }
 
 func spawnBadgerGC() {

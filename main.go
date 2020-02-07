@@ -55,13 +55,19 @@ func main() {
 		}
 	}
 
+	dbDir := config.GetString("database")
+	badgerDB, err := database.CreateDB(dbDir, getDatabaseOpts(dbDir))
+	if err != nil {
+		log.Fatalf("unable to instantiate database: %s", err)
+	}
+
 	// init database
-	db, err = database.Get(0, database.GetBadgerInstance(config.GetString("database")))
+	db, err = database.Get(0, badgerDB)
 	must(err)
 	// make sure to close the database when the program exits
 	defer func() {
 		log.Info("closing database...")
-		if err := database.GetBadgerInstance().Close(); err != nil {
+		if err := badgerDB.Close(); err != nil {
 			log.Error(err)
 		}
 		log.Info("closing database...done")
